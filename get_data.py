@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # coding=utf-8
-import csv
-
-import json
 import os
 from glob import glob
+from itertools import cycle
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 
 from requests import HTTPError
+
+import csv
+import json
 
 try:  # use cache_requests if installed
     from cache_requests import Session
@@ -30,7 +31,8 @@ except ImportError:  # fallback to default
 
 BASE_URL = 'http://www.oecdbetterlifeindex.org/bli/rest/indexes/responses;offset={offset};limit={limit}'
 LIMIT = 1000  # number of records per chunk
-PAGE_LIMIT = 10  # number of chunks per page
+JSON_PAGE_LIMIT = 10  # number of chunks per JSON page
+CSV_PAGE_LIMIT = 107  # number of chunks per CSV page
 
 PWD = os.path.dirname(__file__)
 JSON_DIR = os.path.join(PWD, 'json')
@@ -43,27 +45,25 @@ WEIGHTS_KEYS = ['housing', 'income', 'jobs', 'community', 'education', 'environm
 # CORE :: MAIN
 # ============================================================================
 def main():
+    clean_dirs()
     chunk = 0
 
     # Initialize generator
     dump = dump_results()
-    next(dump)  # prevent weird generator 'nonNone' error
+    next(dump)
 
     # Walk through limits/offsets
     while True:
         # get LIMIT (1000) responses
         response = get_data_chunk(chunk)
-        chunk += 1
 
         # group and write chunks
-        dump.send((chunk, response))
-
-        # data collection complete
-        if len(response) < LIMIT:
+        try:
+            dump.send(response)
+        except StopIteration:
             break
 
-    # signal to generator to dump remaining data
-    dump.send((None, None))
+        chunk += 1
 
     # create a zip file of data
     zip_data()
@@ -73,18 +73,19 @@ def main():
 # ============================================================================
 def get_data_chunk(page, retry=False):
     """GET request data by page number."""
-    offset = page * LIMIT
-    limit = LIMIT
 
     # build URL
+    offset = page * LIMIT
+    limit = LIMIT
     url = BASE_URL.format(offset=offset, limit=limit)
 
     # get response
     response = requests.get(url)
 
+    # return data or retry
     try:
-        response.raise_for_status()
-        return [prepare_row(row) for row in response.json()]
+        response.raise_for_status()  # check errors
+        return (prepare_row(row) for row in response.json())  # clean data
 
     except HTTPError:
         if retry:
@@ -99,33 +100,53 @@ def get_data_chunk(page, retry=False):
 def dump_results(file_name='data_page'):
     """Generator, Combine and dump chunks into files."""
 
-    stack = []
-    page = 0
+    json_stack = []
+    csv_stack = []
+
+    json_page = 0
+    csv_page = 0
+
+    iter_json_chunk = cycle(range(JSON_PAGE_LIMIT))
+    iter_csv_chunk = cycle(range(CSV_PAGE_LIMIT))
 
     while True:
+        json_chunk = next(iter_json_chunk)
+        csv_chunk = next(iter_csv_chunk)
+
         # Receive chunk number and data
-        chunk, results = yield
+        results = list((yield))
 
-        if results:
-            # add data to stack
-            stack.extend(results)
+        # add data to stacks
+        json_stack.extend(results)
+        csv_stack.extend(results)
 
-        # If enough data is collected to merit a page dump ...
-        page_is_filled = (chunk or 0) > 0 and chunk % PAGE_LIMIT is 0
-        end_of_data = (chunk, results) == (None, None)
-        if page_is_filled or end_of_data:
-            page += 1
+        is_end_of_data = len(results) < LIMIT
 
+        # If enough data is collected to merit a JSON page dump ...
+        json_page_is_filled = json_chunk is JSON_PAGE_LIMIT - 1
+        if (json_page_is_filled or is_end_of_data) and json_stack:
             # write data files
-            print('Dumping %d records to %s (csv & json)' % (len(stack), '%s_%03d' % (file_name, page)))
-            write_json(stack, page, file_name)
-            write_csv(stack, page, file_name)
+            print('Dumping %d records to %s.json' % (len(json_stack), '%s_%03d' % (file_name, json_page)))
+            write_json(json_stack, json_page, file_name)
 
             # Reset the current stack
-            stack.clear()
+            json_stack.clear()
 
-        if end_of_data:
-            yield  # prevent StopIteration error
+            json_page += 1
+
+        # If enough data is collected to merit a CSV page dump ...
+        csv_page_is_filled = csv_chunk is CSV_PAGE_LIMIT - 1
+        if (csv_page_is_filled or is_end_of_data) and csv_stack:
+            # write data files
+            print('Dumping %d records to %s.csv' % (len(csv_stack), '%s_%03d' % (file_name, csv_page)))
+            write_csv(csv_stack, csv_page, file_name)
+
+            # Reset the current stack
+            csv_stack.clear()
+
+            csv_page += 1
+
+        if is_end_of_data:
             break
 
 
@@ -161,10 +182,7 @@ def write_csv(data, page, file_name='data_page', directory=CSV_DIR):
     with open(file_path, 'w') as fp:
         writer = csv.DictWriter(fp, fieldnames)
         writer.writeheader()
-
         writer.writerows(data)
-        # for row in data:
-        #     writer.writerow(row)
 
 
 # CORE :: CREATE ZIP
@@ -173,8 +191,12 @@ def zip_data(name='data', zip_json_directory=JSON_DIR, zip_csv_directory=CSV_DIR
     """Create a zip file from data."""
 
     if zip_json_directory:
+        # build zip filename
         zip_json_file_name = os.path.join(pwd, '%s_json.zip' % name)
 
+        print('Writing %s' % os.path.basename(zip_json_file_name))
+
+        # create an archive
         with ZipFile(zip_json_file_name, 'w', compression) as zf:
             # for each JSON file ...
             for file in sorted(glob('%s/*.json' % zip_json_directory)):
@@ -186,7 +208,12 @@ def zip_data(name='data', zip_json_directory=JSON_DIR, zip_csv_directory=CSV_DIR
             zf.printdir()
 
     if zip_csv_directory:
+        # build zip filename
         zip_csv_file_name = os.path.join(pwd, '%s_csv.zip' % name)
+
+        print('Writing %s' % os.path.basename(zip_csv_file_name))
+
+        # create an archive
         with ZipFile(zip_csv_file_name, 'w', compression) as zf:
             # for each JSON file ...
             for file in sorted(glob('%s/*.csv' % zip_csv_directory)):
@@ -210,6 +237,23 @@ def prepare_row(row):
         row[key] = value
 
     return row
+
+
+def clean_dirs():
+    """Clean files of interest."""
+
+    files = {
+        'json': glob('%s/*.json' % JSON_DIR),
+
+        'csv': glob('%s/*.csv' % CSV_DIR),
+
+        'zip': glob('%s/*.zip' % PWD)
+    }
+
+    for key, files in files.items():
+        print('Removing %s %s files.' % (len(files), key))
+        for file in files:
+            os.remove(file)
 
 
 # RUN
