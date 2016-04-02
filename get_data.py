@@ -3,29 +3,29 @@
 import json
 import os
 from glob import glob
+from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 
-try:
+from requests import HTTPError
+
+try:  # use cache_requests if installed
     from cache_requests import Session
 
     requests = Session(ex=60 * 60)
-except ImportError:
+except ImportError:  # fallback to requests
     from requests import Session
 
     requests = Session()
 
-from requests import HTTPError
-from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
-
-try:
+try:  # use zip compression if zlib is available (should be available)
     import zlib
 
     compression = ZIP_DEFLATED
-except ImportError:
+except ImportError:  # fallback to default
     compression = ZIP_STORED
 
 BASE_URL = 'http://www.oecdbetterlifeindex.org/bli/rest/indexes/responses;offset={offset};limit={limit}'
-LIMIT = 1000
-PAGE_LIMIT = 10
+LIMIT = 1000  # AKA number of records per chunk
+PAGE_LIMIT = 10  # number of chunks per page
 PWD = os.path.dirname(__file__)
 DATA_DIR = os.path.join(PWD, 'data')
 
@@ -125,7 +125,7 @@ def zip_data(name='data', zip_directory=DATA_DIR, pwd=PWD):
 
     with ZipFile(zip_file_name, 'w', compression) as zf:
         # for each JSON file ...
-        for file in sorted(glob('%s/*.json' % DATA_DIR)):
+        for file in sorted(glob('%s/*.json' % zip_directory)):
             # add to archive
             zf.write(file, os.path.basename(file))
 

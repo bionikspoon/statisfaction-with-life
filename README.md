@@ -9,18 +9,18 @@ Quick script, get data from satisfaction with life survey.
 ## Install
 
 ```sh
-git clone -d 1 git@github.com:bionikspoon/statisfaction-with-life.git
+git clone --depth 1 git@github.com:bionikspoon/statisfaction-with-life.git
 cd statisfaction-with-life
-#optional: mkvirtualenv stat -p python
+#optional: mkvirtualenv stat -p python3
 pip install -r requirements.txt
-#alternative: pip install requests
+#alternative, use cache_requests: pip install -r requirements-extra.txt
 python get_data.py
 ```
 
 
 ## About
 
-Currently has responses and demographics for 107,000 "satisfaction with life" surveys.
+Currently: 107,000 **"satisfaction with life"** survey results with demographic data.
 
 
 ## Credits
