@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # coding=utf-8
+import csv
+
 import json
 import os
 from glob import glob
@@ -27,7 +29,11 @@ BASE_URL = 'http://www.oecdbetterlifeindex.org/bli/rest/indexes/responses;offset
 LIMIT = 1000  # AKA number of records per chunk
 PAGE_LIMIT = 10  # number of chunks per page
 PWD = os.path.dirname(__file__)
-DATA_DIR = os.path.join(PWD, 'data')
+JSON_DIR = os.path.join(PWD, 'json')
+CSV_DIR = os.path.join(PWD, 'csv')
+
+WEIGHTS_KEYS = ['housing', 'income', 'jobs', 'community', 'education', 'environment', 'civic engagement', 'health',
+                'life_satisfaction', 'safety', 'work_life_balance']
 
 
 def main():
@@ -70,7 +76,7 @@ def get_data_chunk(page, retry=False):
 
     try:
         response.raise_for_status()
-        return response.json()
+        return [prepare_row(row) for row in response.json()]
 
     except HTTPError:
         if retry:
@@ -80,15 +86,23 @@ def get_data_chunk(page, retry=False):
         return get_data_chunk(page, retry=True)
 
 
-def dump_results(file_name_template='data_page_%03d.json', directory=DATA_DIR):
+def prepare_row(row):
+    # remove keys
+    del row['timestamp']
+
+    # split weights into questions
+    weights = row.pop('weights')
+    for key, value in zip(WEIGHTS_KEYS, weights):
+        row[key] = value
+
+    return row
+
+
+def dump_results(file_name='data_page'):
     """Generator, Combine and dump chunks into files."""
 
     data = []
     page = 0
-
-    # ensure directory
-    if not os.path.exists(directory):
-        os.makedirs(directory)
 
     while True:
         # Receive chunk number and data
@@ -103,12 +117,11 @@ def dump_results(file_name_template='data_page_%03d.json', directory=DATA_DIR):
         end_of_data = (chunk, results) == (None, None)
         if page_is_filled or end_of_data:
             page += 1
-            file_name = os.path.join(directory, file_name_template % page)
 
-            # Dump the data
-            print('Dumping %d records to %s' % (len(data), os.path.basename(file_name)))
-            with open(file_name, 'w') as fp:
-                json.dump(data, fp)
+            # write data files
+            print('Dumping %d records to %s (csv & json)' % (len(data), '%s_%03d' % (file_name, page)))
+            write_json(data, page, file_name)
+            write_csv(data, page, file_name)
 
             # Reset the current stack
             data.clear()
@@ -118,20 +131,71 @@ def dump_results(file_name_template='data_page_%03d.json', directory=DATA_DIR):
             break
 
 
-def zip_data(name='data', zip_directory=DATA_DIR, pwd=PWD):
+def write_json(data, page, file_name='data_page', directory=JSON_DIR):
+    # ensure directory
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    # build filename
+    file_basename = '{file_name}_{page:03d}.json'.format(file_name=file_name, page=page)
+    file_path = os.path.join(directory, file_basename)
+
+    # Dump the data
+    with open(file_path, 'w') as fp:
+        json.dump(data, fp)
+
+
+def write_csv(data, page, file_name='data_page', directory=CSV_DIR):
+    # ensure directory
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    # s
+    fieldnames = ['id', 'gender', 'age', 'country']
+    fieldnames.extend(WEIGHTS_KEYS)
+    fieldnames.append('comments')
+
+    # build filename
+    file_basename = '{file_name}_{page:03d}.csv'.format(file_name=file_name, page=page)
+    file_path = os.path.join(directory, file_basename)
+
+    # Dump the data
+    with open(file_path, 'w') as fp:
+        writer = csv.DictWriter(fp, fieldnames)
+        writer.writeheader()
+
+        writer.writerows(data)
+        # for row in data:
+        #     writer.writerow(row)
+
+
+def zip_data(name='data', zip_json_directory=JSON_DIR, zip_csv_directory=CSV_DIR, pwd=PWD):
     """Create a zip file from data."""
 
-    zip_file_name = os.path.join(pwd, '%s.zip' % name)
+    if zip_json_directory:
+        zip_json_file_name = os.path.join(pwd, '%s_json.zip' % name)
 
-    with ZipFile(zip_file_name, 'w', compression) as zf:
-        # for each JSON file ...
-        for file in sorted(glob('%s/*.json' % zip_directory)):
-            # add to archive
-            zf.write(file, os.path.basename(file))
+        with ZipFile(zip_json_file_name, 'w', compression) as zf:
+            # for each JSON file ...
+            for file in sorted(glob('%s/*.json' % zip_json_directory)):
+                # add to archive
+                zf.write(file, os.path.basename(file))
 
-    # print archive manifest
-    with ZipFile(zip_file_name) as zf:
-        zf.printdir()
+        # print archive manifest
+        with ZipFile(zip_json_file_name) as zf:
+            zf.printdir()
+
+    if zip_csv_directory:
+        zip_csv_file_name = os.path.join(pwd, '%s_csv.zip' % name)
+        with ZipFile(zip_csv_file_name, 'w', compression) as zf:
+            # for each JSON file ...
+            for file in sorted(glob('%s/*.csv' % zip_csv_directory)):
+                # add to archive
+                zf.write(file, os.path.basename(file))
+
+        # print archive manifest
+        with ZipFile(zip_csv_file_name) as zf:
+            zf.printdir()
 
 
 if __name__ == '__main__':

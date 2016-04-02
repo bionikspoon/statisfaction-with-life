@@ -22,6 +22,27 @@ python get_data.py
 
 Currently: 107,000 **"satisfaction with life"** survey results with demographic data.
 
+> ###Better Life Index
+> 
+> Rate the topics according to their importance to you (0-5):
+> 
+> - Housing
+> - Income
+> - Jobs
+> - Community
+> - Education
+> - Environment
+> - Civic Engagement
+> - Health
+> - Life Satisfaction
+> - Safety
+> - Work-Life Balance
+>
+> -- http://www.oecdbetterlifeindex.org
+
+
+Includes gender, age, country data, and text comments.
+
 
 ## Credits
 
