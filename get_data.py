@@ -25,9 +25,13 @@ try:  # use zip compression if zlib is available (should be available)
 except ImportError:  # fallback to default
     compression = ZIP_STORED
 
+# CONSTANTS
+# ============================================================================
+
 BASE_URL = 'http://www.oecdbetterlifeindex.org/bli/rest/indexes/responses;offset={offset};limit={limit}'
-LIMIT = 1000  # AKA number of records per chunk
+LIMIT = 1000  # number of records per chunk
 PAGE_LIMIT = 10  # number of chunks per page
+
 PWD = os.path.dirname(__file__)
 JSON_DIR = os.path.join(PWD, 'json')
 CSV_DIR = os.path.join(PWD, 'csv')
@@ -36,6 +40,8 @@ WEIGHTS_KEYS = ['housing', 'income', 'jobs', 'community', 'education', 'environm
                 'life_satisfaction', 'safety', 'work_life_balance']
 
 
+# CORE :: MAIN
+# ============================================================================
 def main():
     chunk = 0
 
@@ -63,6 +69,8 @@ def main():
     zip_data()
 
 
+# CORE :: REQUEST
+# ============================================================================
 def get_data_chunk(page, retry=False):
     """GET request data by page number."""
     offset = page * LIMIT
@@ -86,22 +94,12 @@ def get_data_chunk(page, retry=False):
         return get_data_chunk(page, retry=True)
 
 
-def prepare_row(row):
-    # remove keys
-    del row['timestamp']
-
-    # split weights into questions
-    weights = row.pop('weights')
-    for key, value in zip(WEIGHTS_KEYS, weights):
-        row[key] = value
-
-    return row
-
-
+# CORE :: WRITE FILES
+# ============================================================================
 def dump_results(file_name='data_page'):
     """Generator, Combine and dump chunks into files."""
 
-    data = []
+    stack = []
     page = 0
 
     while True:
@@ -110,7 +108,7 @@ def dump_results(file_name='data_page'):
 
         if results:
             # add data to stack
-            data.extend(results)
+            stack.extend(results)
 
         # If enough data is collected to merit a page dump ...
         page_is_filled = (chunk or 0) > 0 and chunk % PAGE_LIMIT is 0
@@ -119,12 +117,12 @@ def dump_results(file_name='data_page'):
             page += 1
 
             # write data files
-            print('Dumping %d records to %s (csv & json)' % (len(data), '%s_%03d' % (file_name, page)))
-            write_json(data, page, file_name)
-            write_csv(data, page, file_name)
+            print('Dumping %d records to %s (csv & json)' % (len(stack), '%s_%03d' % (file_name, page)))
+            write_json(stack, page, file_name)
+            write_csv(stack, page, file_name)
 
             # Reset the current stack
-            data.clear()
+            stack.clear()
 
         if end_of_data:
             yield  # prevent StopIteration error
@@ -150,7 +148,7 @@ def write_csv(data, page, file_name='data_page', directory=CSV_DIR):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    # s
+    # create field names
     fieldnames = ['id', 'gender', 'age', 'country']
     fieldnames.extend(WEIGHTS_KEYS)
     fieldnames.append('comments')
@@ -169,6 +167,8 @@ def write_csv(data, page, file_name='data_page', directory=CSV_DIR):
         #     writer.writerow(row)
 
 
+# CORE :: CREATE ZIP
+# ============================================================================
 def zip_data(name='data', zip_json_directory=JSON_DIR, zip_csv_directory=CSV_DIR, pwd=PWD):
     """Create a zip file from data."""
 
@@ -198,5 +198,21 @@ def zip_data(name='data', zip_json_directory=JSON_DIR, zip_csv_directory=CSV_DIR
             zf.printdir()
 
 
+# UTILS
+# ============================================================================
+def prepare_row(row):
+    # remove keys
+    del row['timestamp']
+
+    # split weights into questions
+    weights = row.pop('weights')
+    for key, value in zip(WEIGHTS_KEYS, weights):
+        row[key] = value
+
+    return row
+
+
+# RUN
+# ============================================================================
 if __name__ == '__main__':
     main()
