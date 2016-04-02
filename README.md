@@ -11,8 +11,9 @@ Quick script, get data from satisfaction with life survey.
 ```sh
 git clone -d 1 git@github.com:bionikspoon/statisfaction-with-life.git
 cd statisfaction-with-life
-#optional mkvirtualenv stat -p python
+#optional: mkvirtualenv stat -p python
 pip install -r requirements.txt
+#alternative: pip install requests
 python get_data.py
 ```
 
