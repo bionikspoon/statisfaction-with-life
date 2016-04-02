@@ -34,7 +34,8 @@ LIMIT = 1000  # number of records per chunk
 JSON_PAGE_LIMIT = 10  # number of chunks per JSON page
 CSV_PAGE_LIMIT = 107  # number of chunks per CSV page
 
-PWD = os.path.dirname(__file__)
+PWD = os.path.dirname(__file__) or '.'
+print('PWD', PWD)
 JSON_DIR = os.path.join(PWD, 'json')
 CSV_DIR = os.path.join(PWD, 'csv')
 
@@ -160,7 +161,7 @@ def write_json(data, page, file_name='data_page', directory=JSON_DIR):
     file_path = os.path.join(directory, file_basename)
 
     # Dump the data
-    with open(file_path, 'w') as fp:
+    with open(file_path, 'w', encoding='utf-8') as fp:
         json.dump(data, fp)
 
 
@@ -179,7 +180,7 @@ def write_csv(data, page, file_name='data_page', directory=CSV_DIR):
     file_path = os.path.join(directory, file_basename)
 
     # Dump the data
-    with open(file_path, 'w') as fp:
+    with open(file_path, 'w', encoding='utf-8') as fp:
         writer = csv.DictWriter(fp, fieldnames)
         writer.writeheader()
         writer.writerows(data)
@@ -230,6 +231,9 @@ def zip_data(name='data', zip_json_directory=JSON_DIR, zip_csv_directory=CSV_DIR
 def prepare_row(row):
     # remove keys
     del row['timestamp']
+
+    if row['comments']:  # potentially null
+        row['comments'] = row['comments'].replace('\r', ' ').replace('\n', ' ')
 
     # split weights into questions
     weights = row.pop('weights')
